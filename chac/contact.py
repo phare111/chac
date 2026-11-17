@@ -1,7 +1,8 @@
 """Read native filter events; preserve the frozen C3 invalidation rule."""
 
-import numpy as np
 from unittest.mock import patch
+
+import numpy as np
 
 
 class Contact:

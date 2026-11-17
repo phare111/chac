@@ -5,19 +5,20 @@ import json
 import random
 import time
 from collections import Counter
+
 import numpy as np
-from .catchment import Catchment, gray32
+
 from .commitment import Commitment
-from .evidence import motor_event, visual_event
-from .native_history import native_history_from_full
+from .evidence import gray32, motor_event, visual_event
+from .history import native_history_from_full
 from .odometry import advance_odometry, rebase_targets_xz
 from .registration import json_value
-from .runtime import current_views, front_view_index, model_goal_input
+from .runtime import current_views, front_view_index, ovon_target_text
 from .session import (
-    reset_exact_episode,
-    pose,
     _env_action,
     native_action,
+    pose,
+    reset_exact_episode,
     waypoint_targets_xz,
 )
 from .waypoints import decode
@@ -32,7 +33,6 @@ def run_episode(env, agent, row, terminal, stream):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    catchment = Catchment("evidence")
     boundary = Commitment("combined")
     contact = terminal.contact
     sensors = env._sim.habitat_config.agents.main_agent.sim_sensors
@@ -46,10 +46,10 @@ def run_episode(env, agent, row, terminal, stream):
     history = [np.asarray(current_views(env, "OVON-v1")[front]).copy()]
     history_yaws = [0.0]
     r2r = "instruction" in row
-    goal, instruction = (
-        (None, row["instruction"])
+    instruction = (
+        row["instruction"]
         if r2r
-        else model_goal_input(env.current_episode, "OVON-v1")
+        else ovon_target_text(env.current_episode.object_category)
     )
     odometry = np.zeros(3)
     cursor = 5
@@ -95,16 +95,13 @@ def run_episode(env, agent, row, terminal, stream):
             prediction = agent.forward(
                 [current[0], current[2], current[1]] if r2r else current,
                 native_history_from_full(history, 20),
-                goal,
                 instruction,
-                capture_policy_context=False,
                 dataset_type="VLN-CE-v1" if r2r else "OVON-v1",
             )
             calls += 1
             horizons.append(0)
             chosen[1 if prediction["stop"] else 5] += 1
             inference_s += prediction["forward_ms"] / 1000
-            catchment.on_policy_inference(np.asarray(current[front]))
             visual_anchor = np.stack([gray32(v) for v in current])
             old_centers = list(odometry[2] + offsets) + native_history_from_full(
                 history_yaws, 20
@@ -161,10 +158,9 @@ def run_episode(env, agent, row, terminal, stream):
             )
             if event["requires_replan"]:
                 collision = True
-        feedback = catchment.on_action_executed(frame, collision)
-        if feedback["requires_replan"]:
+        if collision:
             cursor = 5
-            reason = feedback["reason"]
+            reason = "execution"
     actual_horizons = horizons.copy()
     actual_horizons[-1] += len(terminal.execution) - sum(horizons)
     metrics = env.get_metrics()

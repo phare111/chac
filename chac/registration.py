@@ -1,7 +1,12 @@
 """Frozen OVON import and JSON adapters; no training or evaluation CLI."""
 
-import importlib, math, os, sys, types
+import importlib
+import math
+import os
+import sys
+import types
 from pathlib import Path
+
 import numpy as np
 import torch
 

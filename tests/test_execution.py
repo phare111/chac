@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from chac.commitment import goal_event, motor_event
-from chac.native_history import native_history_from_full
+from chac.history import native_history_from_full
 from chac.terminal import motor_step_proposal
 
 

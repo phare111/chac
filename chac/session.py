@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import numpy as np
 
 PLAN_LENGTH = 5
@@ -47,22 +48,6 @@ def reset_exact_episode(env, route: dict) -> dict:
         previous._shortest_path_cache = None
     env.current_episode = episode
     return env.reset()
-
-
-def metrics(env) -> dict:
-    value = env.get_metrics()
-    distance = value.get("distance_to_goal")
-    success = value.get("success", 0.0)
-    if distance is None or not np.isfinite(float(distance)):
-        raise RuntimeError("native distance_to_goal metric is unavailable")
-    return {
-        "success": bool(float(success) >= 1.0),
-        "distance_m": float(distance),
-        "metrics": {
-            key: (float(item) if isinstance(item, (int, float, np.number)) else item)
-            for key, item in value.items()
-        },
-    }
 
 
 def _env_action(action: str | dict) -> dict:

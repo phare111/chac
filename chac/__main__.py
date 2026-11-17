@@ -1,10 +1,10 @@
 """Evaluate one explicitly selected HM3D-OVON or R2R-CE episode."""
 
 import argparse
-from contextlib import ExitStack
 import json
-from pathlib import Path
 import sys
+from contextlib import ExitStack
+from pathlib import Path
 
 
 def main():
@@ -21,16 +21,15 @@ def main():
     )
     parser.add_argument("--seed", type=int)
     args = parser.parse_args()
-    from .registration import load_ovon_inference_modules, json_value
+    from .registration import json_value, load_ovon_inference_modules
 
     root = args.omninav.resolve()
     load_ovon_inference_modules(root / "infer_ovon")
     sys.path.insert(0, str(root / "infer_r2r_rxr"))
-    from .runtime import OmniNav, FLOW_MATCH_NORM, PREDICT_SCALE
-    from .bounds import native_w1_bound
     from .episode import run_episode
     from .feedback import MotorContact
-    from .terminal_step import TerminalStep
+    from .runtime import FLOW_MATCH_NORM, PREDICT_SCALE, OmniNav
+    from .terminal import TerminalStep, native_w1_bound
 
     args.output.mkdir(parents=True, exist_ok=False)
     agent = OmniNav(str(args.model.resolve()))

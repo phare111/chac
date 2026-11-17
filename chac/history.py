@@ -1,18 +1,12 @@
-"""Small helpers for matching OmniNav's bounded visual-history input."""
+"""Select prior observations in the order expected by the frozen checkpoint."""
 
 
-def policy_history(images, window):
-    if not isinstance(window, int) or isinstance(window, bool) or window < 0:
+def native_history_from_full(frames, window):
+    if type(window) is not int or window < 0:
         raise ValueError("history window must be a nonnegative integer")
-    return images[:-1][-window:] if window else []
-
-
-def append_policy_frame(images, image, window):
-    if not isinstance(window, int) or isinstance(window, bool) or window < 0:
-        raise ValueError("history window must be a nonnegative integer")
-    images.append(image)
     if window == 0:
-        images[:] = images[-1:]
-    elif len(images) > window + 1:
-        images[:] = [images[0], *images[-window:]]
-    return images
+        return []
+    if len(frames) <= window + 1:
+        return frames[:-1]
+    # Keep the initial observation, then recent history; exclude the current frame.
+    return [frames[0], *frames[-window:-1]]

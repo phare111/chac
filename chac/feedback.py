@@ -3,7 +3,9 @@
 from contextlib import ExitStack
 from copy import deepcopy
 from unittest.mock import patch
+
 import numpy as np
+
 from .contact import StalledContact
 
 

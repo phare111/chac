@@ -1,8 +1,22 @@
 """Parameter-free motor and action-conditioned view evidence; no success guarantee."""
 
 import math
+
 import numpy as np
 from PIL import Image
+
+
+def gray32(rgb):
+    array = np.asarray(rgb)
+    if array.dtype != np.uint8 or array.ndim != 3 or array.shape[2] != 3:
+        raise ValueError("expected uint8 RGB")
+    return (
+        np.asarray(
+            Image.fromarray(array).convert("L").resize((32, 32), Image.Resampling.BOX),
+            dtype=np.float64,
+        )
+        / 255
+    )
 
 
 def motor_event(command, actual, rejected=False):

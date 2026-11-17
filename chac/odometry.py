@@ -47,24 +47,3 @@ def rebase_targets_xz(targets: np.ndarray, receiver_pose: np.ndarray) -> np.ndar
     dx, dz = targets[:, 0] - receiver[0], targets[:, 1] - receiver[1]
     c, s = np.cos(receiver[2]), np.sin(receiver[2])
     return np.stack((c * dx - s * dz, s * dx + c * dz), axis=-1)
-
-
-def action_for_local_target(target_xz: np.ndarray) -> dict:
-    x, z = map(float, np.asarray(target_xz, dtype=np.float64))
-    if not np.isfinite((x, z)).all():
-        raise ValueError("rebased waypoint must be finite")
-    return {
-        "action": "GO_TOWARD_POINT",
-        "action_args": {"r": float(np.hypot(x, z)), "theta": float(np.arctan2(-x, -z))},
-    }
-
-
-def self_check() -> None:
-    start = np.zeros(3, dtype=np.float64)
-    action = action_for_local_target(np.asarray([0.3, -0.8]))
-    moved = advance_odometry(start, action)
-    assert np.allclose(moved[:2], [0.3, -0.8])
-    local = rebase_targets_xz(np.asarray([[0.3, -0.8]]), start)[0]
-    rebased = action_for_local_target(local)["action_args"]
-    assert np.isclose(rebased["r"], action["action_args"]["r"])
-    assert np.isclose(rebased["theta"], action["action_args"]["theta"])

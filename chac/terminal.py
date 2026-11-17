@@ -1,49 +1,57 @@
+"""Use local visited poses to propose one native movement before STOP."""
+
+from copy import deepcopy
+
 import numpy as np
 
+from .history import native_history_from_full
+from .session import _env_action, pose
 
-def memory_proposal(
-    support, positions, current, bound, remaining, require_history_support=False
-):
-    """Attribution-weighted visited-pose consensus; never receives task labels or GT."""
+
+def native_w1_bound(norm, scale):
+    lo, hi = (
+        np.asarray(norm["min"], dtype=float)[0, :2],
+        np.asarray(norm["max"], dtype=float)[0, :2],
+    )
+    if not np.isfinite([*lo, *hi, scale]).all() or np.any(lo > hi) or scale <= 0:
+        raise ValueError("invalid frozen native normalization")
+    return float(scale * np.linalg.norm(np.maximum(np.abs(lo), np.abs(hi))))
+
+
+def motor_step_proposal(visited, current, bound, remaining, step_size):
     from scipy.spatial.transform import Rotation
 
-    positions = np.asarray(positions, dtype=float)
+    visited = np.asarray(visited, dtype=float)
     current = np.asarray(current, dtype=float)
     if (
         current.shape != (7,)
-        or positions.shape != (len(support), 3)
-        or len(support) < 3
-        or not np.isfinite([*positions.ravel(), *current, bound]).all()
-        or bound <= 0
+        or visited.ndim != 2
+        or visited.shape[1] != 3
+        or not len(visited)
     ):
-        raise ValueError("invalid visited poses or native bound")
-    if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining < 1:
-        raise ValueError("invalid action budget")
-    if not np.array_equal(positions[-3:], np.tile(current[:3], (3, 1))):
-        raise ValueError("current-view poses changed")
-    weights = []
-    for grid in support:
-        grid = np.asarray(grid, dtype=float)
-        if grid.ndim != 2 or not grid.size or not np.isfinite(grid).all():
-            raise ValueError("invalid image attribution")
-        weights.append(float(np.maximum(grid, 0).mean()))
-    weights = np.asarray(weights)
-    local = np.linalg.norm(positions - current[:3], axis=1) <= 5 * bound
-    weights = np.where(local, weights, 0)
-    total = float(weights.sum())
-    past_mean = float(weights[:-3].mean()) if len(weights) > 3 else 0.0
-    current_max = float(weights[-3:].max())
-    if require_history_support and past_mean <= current_max:
-        return dict(
-            eligible=False,
-            action=None,
-            reason="current_or_insufficient_history_support",
-            past_mean=past_mean,
-            current_max=current_max,
-        )
-    if total == 0 or remaining < 2:
+        raise ValueError("Invalid visited positions or current pose")
+    if not np.array_equal(visited[-1], current[:3]):
+        raise ValueError("Latest position differs from current pose")
+    if not np.isfinite(current).all() or not np.isfinite(bound) or bound <= 0:
+        raise ValueError("Invalid pose or native bound")
+    if type(remaining) is not int or remaining < 1:
+        raise ValueError("Invalid action budget")
+    if (
+        isinstance(step_size, (bool, np.bool_))
+        or not np.isfinite(step_size)
+        or step_size <= 0
+    ):
+        raise ValueError("Invalid native motor step")
+    # Each native history image votes once. The three current views share a pose.
+    indices = native_history_from_full(list(range(len(visited))), 20)
+    positions = np.vstack((visited[indices], [current[:3]] * 3))
+    if not np.isfinite(positions).all():
+        raise ValueError("Invalid history positions")
+    if remaining < 2:
         return dict(eligible=False, action=None)
-    offset = ((positions - current[:3]) * weights[:, None]).sum(axis=0) / total
+    displacements = positions - current[:3]
+    weights = (np.linalg.norm(displacements, axis=1) <= 5 * bound).astype(float)
+    offset = (displacements * weights[:, None]).sum(axis=0) / weights.sum()
     center = current[:3] + offset
     delta = Rotation.from_quat(current[3:]).inv().apply(offset)
     radius = float(np.linalg.norm(delta[[0, 2]]))
@@ -52,12 +60,12 @@ def memory_proposal(
         eligible=eligible,
         center=center.tolist(),
         image_weights=weights.tolist(),
-        local_image_count=int(local.sum()),
+        local_image_count=int(weights.sum()),
         radius_unclamped=radius,
         action=dict(
             action="GO_TOWARD_POINT",
             action_args=dict(
-                r=min(radius, float(bound)),
+                r=min(radius, float(bound), float(step_size)),
                 theta=float(np.arctan2(-delta[0], -delta[2])),
             ),
         )
@@ -66,62 +74,57 @@ def memory_proposal(
     )
 
 
-def uniform_proposal(
-    visited, current, bound, remaining, medoid=False, terminal_history=False
-):
-    """v10.31 ablation: native history selection and equal image weights; no model."""
-    from .native_history import native_history_from_full
+class TerminalStep:
+    def __init__(self, env, contact, bound, step_size):
+        self.env = env
+        self.contact = contact
+        self.bound = bound
+        self.step_size = step_size
+        self.visited = []
+        self.execution = []
+        self.proposal = None
 
-    visited = np.asarray(visited, dtype=float)
-    if visited.ndim != 2 or visited.shape[1] != 3 or not len(visited):
-        raise ValueError("invalid visited positions")
-    if not np.array_equal(visited[-1], np.asarray(current)[:3]):
-        raise ValueError("latest visited position differs from current pose")
-    if medoid and terminal_history:
-        raise ValueError("one spatial-reference change per candidate")
-    indices = (
-        list(range(max(0, len(visited) - 6), len(visited) - 1))
-        if terminal_history
-        else native_history_from_full(list(range(len(visited))), 20)
-    )
-    positions = [visited[i] for i in indices] + [np.asarray(current)[:3]] * 3
-    result = memory_proposal(
-        [[[1.0]]] * len(positions), positions, current, bound, remaining
-    )
-    if medoid:
-        positions = np.asarray(positions)
-        local = np.flatnonzero(
-            np.linalg.norm(positions - np.asarray(current)[:3], axis=1) <= 5 * bound
-        )
-        points = positions[local]
-        costs = np.linalg.norm(points[:, None] - points[None, :], axis=2).sum(axis=1)
-        # Prefer the smallest displacement when actual visited medoids tie.
-        chosen = local[
-            np.lexsort(
-                (np.linalg.norm(points - np.asarray(current)[:3], axis=1), costs)
-            )[0]
-        ]
-        result = memory_proposal(
-            [[[float(i == chosen)]] for i in range(len(positions))],
-            positions,
-            current,
-            bound,
-            remaining,
-        )
-    return result
+    def execute(self, action, source):
 
-
-def motor_step_proposal(visited, current, bound, remaining, step_size):
-    """One simulator Motor unit, not the model's largest possible W1 displacement."""
-    if (
-        isinstance(step_size, (bool, np.bool_))
-        or not np.isfinite(step_size)
-        or step_size <= 0
-    ):
-        raise ValueError("invalid native Motor step")
-    result = uniform_proposal(visited, current, bound, remaining)
-    if result["eligible"]:
-        result["action"]["action_args"]["r"] = min(
-            result["action"]["action_args"]["r"], float(step_size)
+        before = pose(self.env).copy()
+        result = self.contact.step(action)
+        after = pose(self.env).copy()
+        receipt = getattr(self.contact, "records", [])
+        self.execution.append(
+            dict(
+                action=deepcopy(action),
+                source=source,
+                pose_before=before.tolist(),
+                pose_after=after.tolist(),
+                contact=deepcopy(receipt[-1]) if receipt else None,
+            )
         )
-    return result
+        return result
+
+    def step(self, action):
+
+        if not self.visited:
+            self.visited.append(pose(self.env)[:3].copy())
+        if action["action"].lower() == "stop":
+            self.proposal = motor_step_proposal(
+                self.visited,
+                pose(self.env),
+                self.bound,
+                500 - len(self.execution),
+                self.step_size,
+            )
+            if self.proposal["eligible"]:
+                projected = self.contact.preview(self.proposal["action"])
+                if projected is None:
+                    raise RuntimeError("unsupported terminal controller")
+                command = np.asarray(projected["command_delta"])
+                actual = np.asarray(projected["delta"])
+                self.proposal["motor_valid"] = bool(
+                    command @ command > 0 and command @ actual > 0
+                )
+                if self.proposal["motor_valid"]:
+                    self.execute(_env_action(self.proposal["action"]), "terminal")
+            return self.execute(action, "original_stop")
+        result = self.execute(action, "main")
+        self.visited.append(pose(self.env)[:3].copy())
+        return result

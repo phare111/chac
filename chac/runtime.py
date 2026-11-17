@@ -1,17 +1,12 @@
-#!/usr/bin/env python3
-"""Frozen OmniNav inference adapter and ObjectNav environment construction."""
+"""Frozen OmniNav inference adapter."""
 
 from __future__ import annotations
 
-import copy
 import time
 
 import numpy as np
 import torch
 from PIL import Image
-
-from .offset import apply_representation_offset
-
 
 NUM_ACTION_TRUNK = 5
 NUM_CURRENT_IMAGE = 3
@@ -89,41 +84,10 @@ FLOW_MATCH_NORM = [
         ],
     }
 ]
-OBJECTNAV_CATEGORIES = frozenset(
-    {
-        "chair",
-        "table",
-        "picture",
-        "cabinet",
-        "cushion",
-        "sofa",
-        "bed",
-        "chest_of_drawers",
-        "plant",
-        "sink",
-        "toilet",
-        "stool",
-        "towel",
-        "tv_monitor",
-        "shower",
-        "bathtub",
-        "counter",
-        "fireplace",
-        "gym_equipment",
-        "seating",
-        "clothes",
-    }
-)
 
 
 def as_image(value: np.ndarray) -> Image.Image:
     return Image.fromarray(np.asarray(value).astype(np.uint8))
-
-
-def objectnav_target_text(category: str) -> str:
-    if category not in OBJECTNAV_CATEGORIES:
-        raise ValueError(f"unknown ObjectNav category: {category}")
-    return f"Find a {category.replace('_', ' ')}."
 
 
 def ovon_target_text(category: str) -> str:
@@ -161,26 +125,6 @@ def native_text_prompt(
         f"            # Your current observations is {_current_view_labels(dataset_type)}\n"
         f"            # Your mission is: {instruction}<|NAV|>"
     )
-
-
-def model_goal_input(
-    episode, dataset_type: str | None = None, instruction_override: str | None = None
-) -> tuple[None, str]:
-    category = str(episode.object_category)
-    if dataset_type is None:
-        dataset_type = "ObjectNav-v1" if category in OBJECTNAV_CATEGORIES else "OVON-v1"
-    if dataset_type == "OVON-v1":
-        if instruction_override is not None:
-            if (
-                not isinstance(instruction_override, str)
-                or not instruction_override.strip()
-            ):
-                raise ValueError("OVON instruction override must be a nonempty string")
-            return None, instruction_override
-        return None, ovon_target_text(category)
-    if dataset_type != "ObjectNav-v1":
-        raise ValueError(f"unsupported navigation dataset: {dataset_type}")
-    return None, objectnav_target_text(category)
 
 
 def current_views(env, dataset_type: str | None = None) -> list[np.ndarray]:
@@ -229,88 +173,11 @@ class OmniNav:
             device_map="auto",
             attn_implementation="sdpa",
         ).eval()
-        self.nav_inner_ids = tuple(
-            self.processor.tokenizer("|NAV|", add_special_tokens=False).input_ids
-        )
-        self.last = {}
-        self._representation_offset = None
-        query = getattr(self.model, "query_multihead_attn", None)
-        if query is None:
-            query = getattr(self.model, "query_multihead_multi_attn")
-        query.register_forward_hook(self._query_hook)
-        self.model.wp_predictor.register_forward_pre_hook(self._wp_hook)
-        self.model.model.layers[-1].register_forward_hook(self._decoder_hook)
-
-    def _query_hook(self, _module, _inputs, output):
-        value = output[0] if isinstance(output, tuple) else output
-        representation_offset = self._representation_offset
-        if representation_offset is not None:
-            self._representation_offset = None
-            self.last["r2_policy_context_unshifted"] = value.detach().float().cpu()
-            value = apply_representation_offset(value, representation_offset)
-            output = (value, *output[1:]) if isinstance(output, tuple) else value
-            self.last["r2_offset_applied"] = True
-        self.last["r2_policy_context"] = value.detach().float().cpu()
-        return output if representation_offset is not None else None
-
-    def _wp_hook(self, _module, inputs):
-        self.last["r3_pre_action"] = inputs[0].detach().float().cpu()
-
-    def _decoder_hook(self, _module, _inputs, output):
-        value = output[0] if isinstance(output, tuple) else output
-        self.last["r1_decoder_hidden"] = value.detach().float().cpu()
-
-    def _capture_nav_hidden(self, input_ids, dataset_type):
-        hidden = self.last["r1_decoder_hidden"]
-        ids = input_ids[0].detach().cpu().tolist()
-        nav_index = None
-        width = len(self.nav_inner_ids)
-        for start in range(len(ids) - width + 1):
-            if tuple(ids[start : start + width]) == self.nav_inner_ids:
-                # The following token carries the closing '>' (often fused with
-                # the following newline), so its hidden state is the final
-                # marker state rather than the last '|' piece.
-                nav_index = start + width
-        if not width or nav_index is None or nav_index >= len(ids):
-            if dataset_type == "VLN-CE-v1":
-                for end in range(max(1, len(ids) - 32), len(ids) + 1):
-                    if "<|NAV|>" in self.processor.tokenizer.decode(
-                        ids[max(0, end - 12) : end]
-                    ):
-                        self.last["r1_nav_hidden"] = hidden[:, end - 1 : end]
-                        self.last["r1_nav_token_index"] = end - 1
-                        return
-            raise RuntimeError(
-                "complete <|NAV|> marker was not found in model input_ids"
-            )
-        self.last["r1_nav_hidden"] = hidden[:, nav_index : nav_index + 1]
-        self.last["r1_nav_token_index"] = nav_index
-
-    @staticmethod
-    def representation_metadata(representations: dict) -> dict:
-        consumers = {
-            "r1_nav_hidden": "decoder output; no direct action-head consumer",
-            "r2_policy_context": "wp_predictor, wp_predictor_angle, and arrive_predictor via action_feature",
-            "r3_pre_action": "wp_predictor linear head",
-        }
-        result = {}
-        for name, value in representations.items():
-            if not isinstance(value, torch.Tensor):
-                continue
-            result[name] = {
-                "shape": list(value.shape),
-                "dtype": str(value.dtype).replace("torch.", ""),
-                "device": str(value.device),
-                "requires_grad": bool(value.requires_grad),
-                "next_consumer": consumers.get(name),
-            }
-        return result
 
     def _messages(
         self,
         current: np.ndarray | list[np.ndarray],
         history: list[np.ndarray],
-        goal: np.ndarray | None,
         instruction: str,
         dataset_type: str | None = None,
     ):
@@ -323,9 +190,7 @@ class OmniNav:
             raise ValueError(
                 f"expected {NUM_CURRENT_IMAGE} current views, got {len(current_views)}"
             )
-        images = ([as_image(goal)] if goal is not None else []) + [
-            as_image(x) for x in history
-        ]
+        images = [as_image(x) for x in history]
         images += [as_image(x) for x in current_views]
         content = []
         for index, image in enumerate(images):
@@ -338,19 +203,9 @@ class OmniNav:
                     "resized_width": int(INPUT_SIZE[0] * scale),
                 }
             )
-        if goal is None:
-            prompt = native_text_prompt(instruction, dataset_type)
-            if dataset_type == "VLN-CE-v1":
-                prompt = prompt.replace("            ", "")
-        else:
-            task = "The first image is the visual goal. Navigate to the location shown in the visual goal."
-            prompt = (
-                "You are an autonomous navigation robot. Based on the historical and current pictures, "
-                f"decide the next {NUM_ACTION_TRUNK} waypoint actions.\n"
-                "Your historical pictures are: "
-                f"Your current observations are {_current_view_labels(dataset_type)}.\n"
-                f"Your mission is: {task}<|NAV|>\nOutput the waypoint"
-            )
+        prompt = native_text_prompt(instruction, dataset_type)
+        if dataset_type == "VLN-CE-v1":
+            prompt = prompt.replace("            ", "")
         content.append(
             {
                 "type": "text",
@@ -363,14 +218,10 @@ class OmniNav:
         self,
         current: np.ndarray | list[np.ndarray],
         history: list[np.ndarray],
-        goal: np.ndarray | None,
         instruction: str,
-        representation_offset: np.ndarray | None = None,
-        capture_flow_trace: bool = False,
-        capture_policy_context: bool = False,
         dataset_type: str | None = None,
     ) -> dict:
-        messages = self._messages(current, history, goal, instruction, dataset_type)
+        messages = self._messages(current, history, instruction, dataset_type)
         text = (
             self.processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
@@ -393,119 +244,17 @@ class OmniNav:
             padding=True,
             return_tensors="pt",
         ).to("cuda")
-        self.last = {}
         started = time.perf_counter()
-        if (
-            representation_offset is not None
-            and not np.isfinite(representation_offset).all()
-        ):
-            raise ValueError("representation_offset must be finite")
-        flow_enabled = getattr(self.model, "cross_attention_flow_match", False) is True
-        flow_trace = None
-        flow_hooks = []
-        flow_context = []
-        if capture_policy_context and flow_enabled:
-            norm = getattr(getattr(self.model, "model", None), "norm", None)
-            if norm is None:
-                raise RuntimeError(
-                    "Flow checkpoint does not expose its final hidden-state norm"
-                )
-            flow_hooks.append(
-                norm.register_forward_hook(
-                    lambda _module, _inputs, output: flow_context.append(output)
-                )
+        with torch.inference_mode():
+            outputs = self.model(
+                **inputs,
+                action_former=True,
+                gt_waypoints=0,
+                train=False,
+                train_branch=["continue"],
+                return_dict=False,
+                norm=FLOW_MATCH_NORM,
             )
-        if capture_flow_trace:
-            action_head = getattr(self.model, "action_head", None)
-            if not flow_enabled or action_head is None:
-                raise RuntimeError(
-                    "Flow trace requested from a checkpoint without a Flow Matching action head"
-                )
-            steps = int(action_head.num_inference_timesteps)
-            if steps <= 0:
-                raise RuntimeError("Flow Matching checkpoint has no inference steps")
-            flow_trace = []
-
-            def capture_state(_module, inputs):
-                if (
-                    len(flow_trace) >= steps
-                    or not inputs
-                    or not isinstance(inputs[0], torch.Tensor)
-                ):
-                    raise RuntimeError("invalid Flow Matching state trace")
-                flow_trace.append(
-                    {
-                        "x_t": inputs[0].detach().float().cpu(),
-                        "t": len(flow_trace) / steps,
-                    }
-                )
-
-            def capture_velocity(_module, _inputs, output):
-                value = output[0] if isinstance(output, tuple) else output
-                if (
-                    not flow_trace
-                    or "v_t" in flow_trace[-1]
-                    or not isinstance(value, torch.Tensor)
-                ):
-                    raise RuntimeError("invalid Flow Matching velocity trace")
-                flow_trace[-1]["v_t"] = value.detach().float().cpu()
-
-            flow_hooks.extend(
-                (
-                    action_head.action_encoder.register_forward_pre_hook(capture_state),
-                    action_head.action_decoder.register_forward_hook(capture_velocity),
-                )
-            )
-        self._representation_offset = representation_offset
-        try:
-            with torch.inference_mode():
-                model_inputs = {
-                    **inputs,
-                    "action_former": True,
-                    "gt_waypoints": 0,
-                    "train": False,
-                    "train_branch": ["continue"],
-                    "return_dict": False,
-                }
-                if flow_enabled:
-                    model_inputs["norm"] = FLOW_MATCH_NORM
-                outputs = self.model(**model_inputs)
-        finally:
-            self._representation_offset = None
-            for hook in flow_hooks:
-                hook.remove()
-        if representation_offset is not None and not self.last.get("r2_offset_applied"):
-            raise RuntimeError(
-                "representation offset was not consumed by query_multihead_attn"
-            )
-        self._capture_nav_hidden(inputs["input_ids"], dataset_type)
-        if (
-            capture_policy_context
-            and flow_enabled
-            and "r2_policy_context" not in self.last
-        ):
-            if len(flow_context) != 1:
-                raise RuntimeError(
-                    f"expected one Flow context tensor, got {len(flow_context)}"
-                )
-            context = (
-                flow_context[0][0]
-                if isinstance(flow_context[0], tuple)
-                else flow_context[0]
-            )
-            query = self.model.query_action.expand(context.shape[0], -1, -1)
-            # Flow uses the token sequence directly; OdrNav consumes the checkpoint's learned pooling.
-            with torch.inference_mode():
-                if self.model.query_action_layer == 1:
-                    feature, _ = self.model.query_multihead_attn(
-                        query, context, context
-                    )
-                else:
-                    feature = self.model.query_multihead_multi_attn(
-                        query, context, context
-                    )
-            self.last["r2_policy_context"] = feature.detach().float().cpu()
-        elapsed_ms = (time.perf_counter() - started) * 1000
         if not isinstance(outputs, tuple) or len(outputs) != 4:
             raise RuntimeError(
                 "frozen OmniNav requires waypoint, arrive, sine, and cosine outputs"
@@ -524,29 +273,10 @@ class OmniNav:
         angle = (
             torch.atan2(sin_angle, cos_angle).detach().float().cpu().numpy().reshape(-1)
         )
-        stopped = (
-            bool(np.all(arrive_values > 0.5))
-            if flow_enabled
-            else bool(np.all(arrive_values >= 0))
+        return dict(
+            trunk=waypoint,
+            angle=angle,
+            arrive=arrive_values,
+            stop=bool(np.all(arrive_values > 0.5)),
+            forward_ms=(time.perf_counter() - started) * 1000,
         )
-        result = {
-            "trunk": waypoint,
-            "angle": angle,
-            "arrive": arrive_values,
-            "stop": stopped,
-            "angle_source": "native_flow_cumulative_sin_cos"
-            if flow_enabled
-            else "native_predict_angle_head",
-            "forward_ms": elapsed_ms,
-            "representations": copy.deepcopy(self.last),
-            "representation_meta": self.representation_metadata(self.last),
-        }
-        if flow_trace is not None:
-            if len(flow_trace) != steps or any(
-                "v_t" not in step for step in flow_trace
-            ):
-                raise RuntimeError(
-                    f"incomplete Flow Matching trace: expected {steps} steps, got {len(flow_trace)}"
-                )
-            result["flow_trace"] = flow_trace
-        return result

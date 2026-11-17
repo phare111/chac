@@ -44,7 +44,7 @@ Both tasks use a 500-action budget. The success distance is 0.25 m for HM3D-OVON
 | `execution.json` | Every environment action, including any terminal correction and the subsequent STOP, with controller feedback |
 | `result.json` | Episode success, SPL, final distance, policy calls, measured VLM and Flow forwards, inference and loop times, action count, and horizon distributions |
 
-The chosen horizon is five for a movement plan and one for a STOP plan. The executed horizon counts the actions actually taken per policy call, including any terminal correction. The native horizon excludes the extra terminal move. Episode timing covers the execution loop and per-step trace writing, excluding model loading and environment setup.
+The chosen horizon is five for a movement plan and one for a STOP plan. The executed horizon counts the actions actually taken per policy call, including any terminal correction. The native horizon excludes the extra terminal move. Inference timing starts after processor inputs are transferred to the device and ends after the decoded outputs reach the CPU. This release omits historical hidden-state diagnostics, so measure timings again for performance comparisons. Episode timing covers the execution loop and per-step trace writing, excluding model loading and environment setup.
 
 ## Code map
 
@@ -53,7 +53,7 @@ The chosen horizon is five for a movement plan and one for a STOP plan. The exec
 | [episode.py](chac/episode.py) | Follow one plan from inference through reuse, early refresh, or STOP |
 | [evidence.py](chac/evidence.py), [commitment.py](chac/commitment.py) | Check visual, task, and motor boundaries |
 | [feedback.py](chac/feedback.py) | Preview the native controller and verify its movement receipt |
-| [terminal.py](chac/terminal.py), [terminal_step.py](chac/terminal_step.py) | Propose, bound, and execute the final correction |
+| [terminal.py](chac/terminal.py) | Propose, bound, and execute the final correction |
 | [runtime.py](chac/runtime.py), [waypoints.py](chac/waypoints.py) | Construct model inputs, run frozen inference, and decode waypoints |
 | [environments.py](chac/environments.py), [ovon.yaml](chac/ovon.yaml) | Select the requested episode and configure its task, sensors, and success distance |
 

@@ -1,6 +1,10 @@
 """Two native commitment events; no candidate, sampling, transport or fitted threshold."""
 
-import hashlib, pickle, random, sys
+import hashlib
+import pickle
+import random
+import sys
+
 import numpy as np
 
 

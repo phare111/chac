@@ -1,14 +1,8 @@
-"""Native waypoint decoding and command diagnostics."""
+"""Native waypoint decoding."""
 
 from __future__ import annotations
 
 import numpy as np
-
-from .odometry import (
-    action_for_local_target,
-    advance_odometry,
-    rebase_targets_xz,
-)
 
 
 def decode(
@@ -46,23 +40,3 @@ def decode(
             "theta": float((theta + np.pi) % (2 * np.pi) - np.pi),
         },
     }
-
-
-def command_metrics(action: dict, current: np.ndarray, target: np.ndarray) -> dict:
-    next_pose = advance_odometry(current, action)
-    return {
-        "translation_m": float(action["action_args"]["r"]),
-        "rotation_deg": float(np.rad2deg(action["action_args"]["theta"])),
-        "remaining_target_distance_m": float(np.linalg.norm(target - current[:2])),
-        "command_target_error_m": float(np.linalg.norm(target - next_pose[:2])),
-    }
-
-
-def absolute_target_check() -> None:
-    pose = np.asarray([0.1, -0.2, 0.7])
-    target = np.asarray([0.4, -0.8])
-    action = action_for_local_target(rebase_targets_xz(target[None], pose)[0])
-    assert command_metrics(action, pose, target)["command_target_error_m"] < 1e-12
-    assert command_metrics(action, pose, target)["translation_m"] < np.linalg.norm(
-        target
-    )

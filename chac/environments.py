@@ -4,7 +4,21 @@ import gzip
 import json
 from pathlib import Path
 
-from .ovon import ovon_split_data_path
+OVON_SPLIT_FILES = {
+    "val_seen": "val_seen.json.gz",
+    "val_seen_synonyms": "val_unseen_easy.json.gz",
+    "val_unseen": "val_unseen_hard.json.gz",
+}
+
+
+def ovon_split_data_path(data_root: Path, split: str) -> Path:
+    try:
+        filename = OVON_SPLIT_FILES[split]
+    except KeyError as exc:
+        raise ValueError(
+            f"OVON split must be one of {sorted(OVON_SPLIT_FILES)}"
+        ) from exc
+    return data_root / split / filename
 
 
 def environment(args):
@@ -12,7 +26,7 @@ def environment(args):
     from habitat.core.dataset import Dataset
     from habitat.datasets import make_dataset
     from habitat.tasks.nav.nav import NavigationEpisode, NavigationGoal
-    from omegaconf import read_write, open_dict
+    from omegaconf import open_dict, read_write
 
     cfg = get_config(str(Path(__file__).with_name("ovon.yaml").resolve())).habitat
     row = dict(scene=args.scene, episode_id=args.episode_id)
