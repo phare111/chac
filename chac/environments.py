@@ -29,7 +29,7 @@ def environment(args):
     from omegaconf import open_dict, read_write
 
     cfg = get_config(str(Path(__file__).with_name("ovon.yaml").resolve())).habitat
-    row = dict(scene=args.scene, episode_id=args.episode_id)
+    row = {"scene": args.scene, "episode_id": args.episode_id}
     with read_write(cfg):
         with open_dict(cfg.task.actions.GO_TOWARD_POINT):
             cfg.task.actions.GO_TOWARD_POINT.rotate_agent = True

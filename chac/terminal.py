@@ -48,7 +48,7 @@ def motor_step_proposal(visited, current, bound, remaining, step_size):
     if not np.isfinite(positions).all():
         raise ValueError("Invalid history positions")
     if remaining < 2:
-        return dict(eligible=False, action=None)
+        return {"eligible": False, "action": None}
     displacements = positions - current[:3]
     weights = (np.linalg.norm(displacements, axis=1) <= 5 * bound).astype(float)
     offset = (displacements * weights[:, None]).sum(axis=0) / weights.sum()
@@ -56,22 +56,22 @@ def motor_step_proposal(visited, current, bound, remaining, step_size):
     delta = Rotation.from_quat(current[3:]).inv().apply(offset)
     radius = float(np.linalg.norm(delta[[0, 2]]))
     eligible = radius > 0
-    return dict(
-        eligible=eligible,
-        center=center.tolist(),
-        image_weights=weights.tolist(),
-        local_image_count=int(weights.sum()),
-        radius_unclamped=radius,
-        action=dict(
-            action="GO_TOWARD_POINT",
-            action_args=dict(
-                r=min(radius, float(bound), float(step_size)),
-                theta=float(np.arctan2(-delta[0], -delta[2])),
-            ),
-        )
+    return {
+        "eligible": eligible,
+        "center": center.tolist(),
+        "image_weights": weights.tolist(),
+        "local_image_count": int(weights.sum()),
+        "radius_unclamped": radius,
+        "action": {
+            "action": "GO_TOWARD_POINT",
+            "action_args": {
+                "r": min(radius, float(bound), float(step_size)),
+                "theta": float(np.arctan2(-delta[0], -delta[2])),
+            },
+        }
         if eligible
         else None,
-    )
+    }
 
 
 class TerminalStep:
@@ -91,13 +91,13 @@ class TerminalStep:
         after = pose(self.env).copy()
         receipt = getattr(self.contact, "records", [])
         self.execution.append(
-            dict(
-                action=deepcopy(action),
-                source=source,
-                pose_before=before.tolist(),
-                pose_after=after.tolist(),
-                contact=deepcopy(receipt[-1]) if receipt else None,
-            )
+            {
+                "action": deepcopy(action),
+                "source": source,
+                "pose_before": before.tolist(),
+                "pose_after": after.tolist(),
+                "contact": deepcopy(receipt[-1]) if receipt else None,
+            }
         )
         return result
 

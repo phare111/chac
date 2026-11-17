@@ -273,10 +273,10 @@ class OmniNav:
         angle = (
             torch.atan2(sin_angle, cos_angle).detach().float().cpu().numpy().reshape(-1)
         )
-        return dict(
-            trunk=waypoint,
-            angle=angle,
-            arrive=arrive_values,
-            stop=bool(np.all(arrive_values > 0.5)),
-            forward_ms=(time.perf_counter() - started) * 1000,
-        )
+        return {
+            "trunk": waypoint,
+            "angle": angle,
+            "arrive": arrive_values,
+            "stop": bool(np.all(arrive_values > 0.5)),
+            "forward_ms": (time.perf_counter() - started) * 1000,
+        }

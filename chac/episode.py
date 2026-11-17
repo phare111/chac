@@ -118,18 +118,18 @@ def run_episode(env, agent, row, terminal, stream):
         stream.write(
             json.dumps(
                 json_value(
-                    dict(
-                        step=step,
-                        source="REUSE" if reuse else "THINK",
-                        slot=cursor,
-                        plan_id=plan_id,
-                        action=action,
-                        reason=reason,
-                        visual=gate,
-                        commitment=commitment,
-                        pose_before=before,
-                        pose_after=pose(env),
-                    )
+                    {
+                        "step": step,
+                        "source": "REUSE" if reuse else "THINK",
+                        "slot": cursor,
+                        "plan_id": plan_id,
+                        "action": action,
+                        "reason": reason,
+                        "visual": gate,
+                        "commitment": commitment,
+                        "pose_before": before,
+                        "pose_after": pose(env),
+                    }
                 )
             )
             + "\n"
@@ -164,17 +164,17 @@ def run_episode(env, agent, row, terminal, stream):
     actual_horizons = horizons.copy()
     actual_horizons[-1] += len(terminal.execution) - sum(horizons)
     metrics = env.get_metrics()
-    return dict(
-        success=metrics["success"],
-        spl=metrics["spl"],
-        distance_to_goal_m=metrics["distance_to_goal"],
-        policy_calls=calls,
-        inference_s=inference_s,
-        episode_s=time.perf_counter() - start,
-        environment_actions=len(terminal.execution),
-        chosen_horizon_distribution=dict(chosen),
-        native_horizon_distribution=dict(Counter(horizons)),
-        executed_horizon_distribution=dict(Counter(actual_horizons)),
-        mean_executed_horizon=np.mean(actual_horizons),
-        terminal_proposal=terminal.proposal,
-    )
+    return {
+        "success": metrics["success"],
+        "spl": metrics["spl"],
+        "distance_to_goal_m": metrics["distance_to_goal"],
+        "policy_calls": calls,
+        "inference_s": inference_s,
+        "episode_s": time.perf_counter() - start,
+        "environment_actions": len(terminal.execution),
+        "chosen_horizon_distribution": dict(chosen),
+        "native_horizon_distribution": dict(Counter(horizons)),
+        "executed_horizon_distribution": dict(Counter(actual_horizons)),
+        "mean_executed_horizon": np.mean(actual_horizons),
+        "terminal_proposal": terminal.proposal,
+    }

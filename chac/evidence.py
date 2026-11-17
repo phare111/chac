@@ -30,11 +30,11 @@ def motor_event(command, actual, rejected=False):
         raise ValueError("expected finite planar controller displacements")
     norm = float(command @ command)
     progress = float(actual @ command)
-    return dict(
-        error=float(np.linalg.norm(actual - command)),
-        progress=progress,
-        requires_replan=bool(rejected or (norm > 0 and progress <= 0)),
-    )
+    return {
+        "error": float(np.linalg.norm(actual - command)),
+        "progress": progress,
+        "requires_replan": bool(rejected or (norm > 0 and progress <= 0)),
+    }
 
 
 def covered(direction, centers, hfov):
@@ -80,24 +80,24 @@ def visual_event(current, anchor, direction, current_centers, old_centers, hfov)
     camera = int(np.argmin(np.abs(relative)))
     visible = abs(relative[camera]) <= hfov / 2
     if not visible:
-        return dict(
-            new_route_view=new_view,
-            route_visible=False,
-            route_novelty=False,
-            event=False,
-        )
+        return {
+            "new_route_view": new_view,
+            "route_visible": False,
+            "route_novelty": False,
+            "event": False,
+        }
     projected = -math.tan(float(relative[camera])) / math.tan(hfov / 2)
     region = min(2, max(0, int((projected + 1) * 1.5)))
     old = np.concatenate([regions(g) for g in anchor])
     now = regions(current[camera])
     novelty = np.asarray([min(float(np.mean(np.abs(p - q))) for q in old) for p in now])
     route_novelty = bool(novelty[region] > max(np.delete(novelty, region)))
-    return dict(
-        new_route_view=new_view,
-        route_visible=True,
-        camera=camera,
-        region=region,
-        novelty=novelty.tolist(),
-        route_novelty=route_novelty,
-        event=bool(new_view and route_novelty),
-    )
+    return {
+        "new_route_view": new_view,
+        "route_visible": True,
+        "camera": camera,
+        "region": region,
+        "novelty": novelty.tolist(),
+        "route_novelty": route_novelty,
+        "event": bool(new_view and route_novelty),
+    }

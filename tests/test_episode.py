@@ -33,7 +33,7 @@ class EpisodeTests(unittest.TestCase):
             _sim=sim,
             current_episode=NS(object_category="chair"),
             episode_over=False,
-            get_metrics=lambda: dict(success=0, spl=0, distance_to_goal=1.0),
+            get_metrics=lambda: {"success": 0, "spl": 0, "distance_to_goal": 1.0},
         )
         frame = np.zeros((32, 32, 3), np.uint8)
         contact = NS(records=[], receipt=state.position, preview=lambda action: None)
@@ -44,12 +44,12 @@ class EpisodeTests(unittest.TestCase):
 
         contact.step = step
         terminal = TerminalStep(env, contact, 1.0, 0.25)
-        chunk = dict(
-            trunk=np.zeros((5, 2)),
-            angle=np.zeros(5),
-            arrive=np.zeros(5),
-            forward_ms=1.0,
-        )
+        chunk = {
+            "trunk": np.zeros((5, 2)),
+            "angle": np.zeros(5),
+            "arrive": np.zeros(5),
+            "forward_ms": 1.0,
+        }
         agent = Mock()
         agent.forward.side_effect = [
             dict(**chunk, stop=False),

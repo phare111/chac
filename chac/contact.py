@@ -27,12 +27,12 @@ class Contact:
         )
         # Numerical equality tolerance, not an authorization-risk threshold.
         self.filters.append(
-            dict(
-                requested=a.tolist(),
-                filtered=b.tolist(),
-                planar_error_m=float(np.linalg.norm((a - b)[[0, 2]])),
-                blocked=not np.allclose(a[[0, 2]], b[[0, 2]], atol=1e-5, rtol=0),
-            )
+            {
+                "requested": a.tolist(),
+                "filtered": b.tolist(),
+                "planar_error_m": float(np.linalg.norm((a - b)[[0, 2]])),
+                "blocked": not np.allclose(a[[0, 2]], b[[0, 2]], atol=1e-5, rtol=0),
+            }
         )
         return result
 
@@ -40,14 +40,14 @@ class Contact:
         self.filters = []
         result = self.original_step(action)
         self.records.append(
-            dict(
-                action=action,
-                filters=self.filters.copy(),
-                contact=any(r["blocked"] for r in self.filters),
-                legacy_collision=bool(
+            {
+                "action": action,
+                "filters": self.filters.copy(),
+                "contact": any(r["blocked"] for r in self.filters),
+                "legacy_collision": bool(
                     getattr(self.env._sim, "previous_step_collided", False)
                 ),
-            )
+            }
         )
         return result
 

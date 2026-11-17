@@ -83,20 +83,24 @@ class Commitment:
         finally:
             if rng_digest() != before:
                 raise RuntimeError("read-only commitment check consumed randomness")
-        record = dict(
-            readonly_rng_exact=True,
-            step=step,
-            chunk=chunk,
-            completed_index=cursor,
-            next_index=cursor + 1,
-            old_plan=plan,
-            completed_arrive=float(prediction["arrive"][cursor - 1]),
-            goal=bool(goal),
-            motor=bool(motor),
-            projection=projection,
-            preview_available=preview_available,
-            rethink=bool(goal or motor),
-            reason="commitment_goal" if goal else "commitment_motor" if motor else None,
-        )
+        record = {
+            "readonly_rng_exact": True,
+            "step": step,
+            "chunk": chunk,
+            "completed_index": cursor,
+            "next_index": cursor + 1,
+            "old_plan": plan,
+            "completed_arrive": float(prediction["arrive"][cursor - 1]),
+            "goal": bool(goal),
+            "motor": bool(motor),
+            "projection": projection,
+            "preview_available": preview_available,
+            "rethink": bool(goal or motor),
+            "reason": "commitment_goal"
+            if goal
+            else "commitment_motor"
+            if motor
+            else None,
+        }
         self.records.append(record)
         return record

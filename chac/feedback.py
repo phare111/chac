@@ -116,12 +116,12 @@ class MotorContact(StalledContact):
         if len(commands) != 1:
             raise RuntimeError("expected one audited native movement request")
         self.projections.append(
-            dict(
-                step=len(self.records),
-                action=deepcopy(action),
-                delta=delta.tolist(),
-                command_delta=commands[0].tolist(),
-            )
+            {
+                "step": len(self.records),
+                "action": deepcopy(action),
+                "delta": delta.tolist(),
+                "command_delta": commands[0].tolist(),
+            }
         )
         return delta
 
