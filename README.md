@@ -1,6 +1,12 @@
 # CHAC
 
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Hugging Face Transformers](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?logo=huggingface)](https://huggingface.co/docs/transformers/)
+[![License MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
 CHAC adaptively executes the five waypoints predicted by a frozen OmniNav Flow policy. It reuses the current plan until a change in the view, the plan’s arrival prediction, or controller feedback calls for replanning. Before STOP, it can take one corrective step using previously visited positions.
+
+![CHAC workflow showing waypoint reuse, replanning checks, and the final correction before STOP.](assets/chac-overview.png)
 
 ## Setup
 

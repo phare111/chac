@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "chac"
 version = "10.36.0"
 description = "Adaptive execution of frozen OmniNav waypoint plans"
+license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = ["numpy", "Pillow>=9.1", "scipy"]
 
